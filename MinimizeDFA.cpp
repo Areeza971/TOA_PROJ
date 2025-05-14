@@ -1,168 +1,119 @@
 #include <iostream>
-#include <set>
-#include <map>
-#include <string>
 using namespace std;
 
-// DFA structure definition
-struct DFA {
-    int numStates;
-    int numSymbols;
-    int transitions[100][100];
-    set<int> acceptingStates;
-};
+const int MAX_STATES = 10;
+const int MAX_ALPHABETS = 5;
 
-// ANSI color codes for terminal output
-#define RESET   "\033[0m"
-#define RED     "\033[31m"
-#define GREEN   "\033[32m"
-#define CYAN    "\033[36m"
+int states, alphabets;
+char alpha[MAX_ALPHABETS];
+char stateList[MAX_STATES];
+char transition[MAX_STATES][MAX_ALPHABETS];
+int isFinal[MAX_STATES];
+char initialState;
 
-// Print the DFA details (states and transitions)
-void printDFA(const DFA& dfa) {
-    cout << "States:\n";
-    for (int i = 0; i < dfa.numStates; ++i) {
-        if (i == 0) {
-            cout << CYAN << "Initial State: " << i << RESET << endl;
-        } else if (dfa.acceptingStates.count(i)) {
-            cout << GREEN << "Accepting State: " << i << RESET << endl;
-        } else {
-            cout << RED << "Rejected State: " << i << RESET << endl;
-        }
+// Helper to find index of a state
+int getStateIndex(char state) {
+    for (int i = 0; i < states; i++) {
+        if (stateList[i] == state)
+            return i;
     }
-
-    cout << "\nTransitions:\n";
-    for (int i = 0; i < dfa.numStates; ++i) {
-        for (int j = 0; j < dfa.numSymbols; ++j) {
-            cout << "  State " << i << " --[" << j << "]--> State " << dfa.transitions[i][j] << endl;
-        }
-    }
-    cout << endl;
+    return -1;
 }
 
-// Minimize the given DFA using partitioning method
-DFA minimizeDFA(const DFA& dfa) {
-    // Step 1: Initialize partitions (accepting vs non-accepting states)
-    set<int> partitions[2];
-    int stateGroup[100];
+// Check if two states are distinguishable
+void minimizeDFA() {
+    bool distinguishable[MAX_STATES][MAX_STATES] = {false};
 
-    for (int i = 0; i < dfa.numStates; ++i) {
-        if (dfa.acceptingStates.count(i)) {
-            partitions[1].insert(i);
-            stateGroup[i] = 1;
-        } else {
-            partitions[0].insert(i);
-            stateGroup[i] = 0;
+    // Step 1: Mark pairs where one is final and the other is not
+    for (int i = 0; i < states; i++) {
+        for (int j = 0; j < i; j++) {
+            if (isFinal[i] != isFinal[j]) {
+                distinguishable[i][j] = true;
+            }
         }
     }
 
-    // Display initial partitioning
-    cout << "Initial Partitions (Accepting vs Non-Accepting):\n";
-    for (int i = 0; i < 2; ++i) {
-        cout << "Partition " << i << ": ";
-        for (int s : partitions[i]) {
-            cout << s << " ";
-        }
-        cout << endl;
-    }
-
-    // Step 2: Refine partitions based on transition signatures
-    bool updated = true;
-    while (updated) {
+    // Step 2: Iteratively mark distinguishable pairs
+    bool updated;
+    do {
         updated = false;
-        set<int> newPartitions[100];
-        int newStateGroup[100];
-        int partitionCount = 0;
+        for (int i = 0; i < states; i++) {
+            for (int j = 0; j < i; j++) {
+                if (distinguishable[i][j])
+                    continue;
+                for (int k = 0; k < alphabets; k++) {
+                    int iNext = getStateIndex(transition[i][k]);
+                    int jNext = getStateIndex(transition[j][k]);
 
-        for (int p = 0; p < 2; ++p) {
-            map<string, set<int>> splitter;
+                    if (iNext == -1 || jNext == -1)
+                        continue;
 
-            for (int state : partitions[p]) {
-                string signature;
-                for (int s = 0; s < dfa.numSymbols; ++s) {
-                    signature += to_string(stateGroup[dfa.transitions[state][s]]) + ",";
+                    if (iNext == jNext)
+                        continue;
+
+                    int a = max(iNext, jNext);
+                    int b = min(iNext, jNext);
+                    if (distinguishable[a][b]) {
+                        distinguishable[i][j] = true;
+                        updated = true;
+                        break;
+                    }
                 }
-                splitter[signature].insert(state);
-            }
-
-            cout << "Splits for partition " << p << ":\n";
-            for (const auto& part : splitter) {
-                cout << "Signature: " << part.first << " -> ";
-                for (int s : part.second) {
-                    cout << s << " ";
-                }
-                cout << endl;
-            }
-
-            for (const auto& part : splitter) {
-                for (int state : part.second) {
-                    newPartitions[partitionCount].insert(state);
-                    newStateGroup[state] = partitionCount;
-                }
-                partitionCount++;
             }
         }
+    } while (updated);
 
-        if (partitionCount != 2)
-            updated = true;
+    // Step 3: Print equivalent state groups
+    bool printed[MAX_STATES] = {false};
 
-        for (int i = 0; i < partitionCount; ++i) {
-            partitions[i] = newPartitions[i];
+    cout << "\nEquivalent States (Minimized Groups):\n";
+    for (int i = 0; i < states; i++) {
+        if (printed[i]) continue;
+        cout << "{ " << stateList[i];
+        for (int j = 0; j < states; j++) {
+            if (i != j && !distinguishable[max(i, j)][min(i, j)]) {
+                cout << ", " << stateList[j];
+                printed[j] = true;
+            }
         }
+        printed[i] = true;
+        cout << " }\n";
     }
-
-    // Step 3: Build the minimized DFA from partitions
-    DFA minDFA;
-    minDFA.numStates = 0;
-    minDFA.numSymbols = dfa.numSymbols;
-    minDFA.acceptingStates.clear();
-
-    for (int i = 0; i < 100; ++i) {
-        if (partitions[i].empty()) continue;
-
-        int rep = *partitions[i].begin();
-        for (int s = 0; s < dfa.numSymbols; ++s) {
-            minDFA.transitions[i][s] = stateGroup[dfa.transitions[rep][s]];
-        }
-
-        for (int state : partitions[i]) {
-            if (dfa.acceptingStates.count(state)) {
-                minDFA.acceptingStates.insert(i);
-                break;
-            }
-        }
-        minDFA.numStates++;
-    }
-
-    return minDFA;
 }
 
-// Main function
 int main() {
-    // Step 0: Define the DFA
-    DFA dfa;
-    dfa.numStates = 6;
-    dfa.numSymbols = 2;
+    cout << "Enter number of states: ";
+    cin >> states;
 
-    // Define transitions
-    dfa.transitions[0][0] = 1; dfa.transitions[0][1] = 0;
-    dfa.transitions[1][0] = 2; dfa.transitions[1][1] = 3;
-    dfa.transitions[2][0] = 4; dfa.transitions[2][1] = 5;
-    dfa.transitions[3][0] = 2; dfa.transitions[3][1] = 3;
-    dfa.transitions[4][0] = 5; dfa.transitions[4][1] = 4;
-    dfa.transitions[5][0] = 5; dfa.transitions[5][1] = 0;
+    cout << "Enter number of alphabets: ";
+    cin >> alphabets;
 
-    // Define accepting states
-    dfa.acceptingStates = {4, 5};
+    for (int i = 0; i < alphabets; i++) {
+        cout << "Enter alphabet " << i + 1 << ": ";
+        cin >> alpha[i];
+    }
 
-    // Print original DFA
-    cout << "Original DFA:\n";
-    printDFA(dfa);
+    for (int i = 0; i < states; i++) {
+        if (i == 0) {
+            cout << "Enter initial state (A-Z): ";
+            cin >> stateList[i];
+            initialState = stateList[i];
+        } else {
+            cout << "Enter state (A-Z): ";
+            cin >> stateList[i];
+        }
 
-    // Minimize and print minimized DFA
-    DFA minDFA = minimizeDFA(dfa);
-    cout << "Minimized DFA:\n";
-    printDFA(minDFA);
+        cout << "Is this a Final state? (1 = yes, 0 = no): ";
+        cin >> isFinal[i];
+
+        for (int j = 0; j < alphabets; j++) {
+            cout << "Transition for " << stateList[i] << " on " << alpha[j] << ": ";
+            cin >> transition[i][j];
+        }
+    }
+    
+   
+    minimizeDFA();
 
     return 0;
 }
